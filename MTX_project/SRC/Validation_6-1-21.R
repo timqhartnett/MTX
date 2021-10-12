@@ -11,22 +11,16 @@ cat("\014")
 # Clean workspace
 rm(list=ls())
 
-#### directroy definitions ####
-DATA_DIR = paste(getwd(),'DATA',sep='/')
-MODEL_DIR = paste(getwd(),'MODELS',sep='/')
-PLOT_DIR = paste(getwd(),'PLOTS',sep='/')
-ANALYSIS_DIR = paste(getwd(),'ANALYSIS',sep='/')
+#directroy definitions
+DATA_DIR = '/home/timothy/Desktop/MnNiSi/TransitionTemp_3-5-21/Data'
+MODEL_DIR = '/home/timothy/Desktop/MnNiSi/TransitionTemp_3-5-21/Models'
+PLOT_DIR = '/home/timothy/Desktop/MnNiSi/TransitionTemp_3-5-21/Plots'
+ANALYSIS_DIR = '/home/timothy/Desktop/MnNiSi/TransitionTemp_3-5-21/analysis'
 
-#### libraries ####
-library(matrixStats) #used for rowmeans and sd function
-library(readxl)
-library(e1071) #contains svr algorithms and prediction functions
-
-#### function definitions ####
-fn.composition.to.magpie = function(data,magpie_features){
-  magpie.dataframe = data.frame(matrix(NA,nrow = nrow(data), ncol=ncol(magpie_features))) #create blank dataframe for weighted features
-  colnames(magpie.dataframe) = colnames(magpie_features)
-  mean.features = colnames(magpie_features)
+fn.composition.to.magpie = function(data,magpie_features,selected_features){#function converts from composition to Magpie features using magpie elements CSV
+  magpie.dataframe = data.frame(matrix(NA,nrow = nrow(data), ncol=length(selected_features))) #create blank dataframe for weighted features
+  colnames(magpie.dataframe) = selected_features
+  mean.features = selected_features
   for (i in 1:length(mean.features)){
     feature.vector = numeric(nrow(data))
     for (j in 1:ncol(data)){
@@ -37,7 +31,7 @@ fn.composition.to.magpie = function(data,magpie_features){
   return(magpie.dataframe)
 }
 
-fn.temp.predict = function(data, model){
+fn.temp.predict = function(data, model){#function for ensemble prediction of property (temp/hyst)
   predict.data = NULL
   i=1
   repeat{
@@ -53,24 +47,40 @@ fn.temp.predict = function(data, model){
   return(data.predictions)
 }
 
-#### load data ####
+#data
+library(readxl)
+library(e1071)
+library(matrixStats)
 composition <- as.data.frame(read_excel(paste(DATA_DIR,'Radhika_comp_5-28-21.xlsx',sep = '/')))
-validation.composition <- composition[,-c(1,11:12)]
-magpie.elements <- read.csv(paste(DATA_DIR,'element_magpie.csv',sep = '/'),row.names = 'X')
-validation.magpie <- fn.composition.to.magpie(validation.composition,magpie.elements)
+validation.composition <- composition[,2:10]
+composition.82721 <- as.data.frame(read_excel(paste(DATA_DIR,'VCU_comp_8-27-21.xlsx',sep = '/')))
+magpie.82721 <- as.data.frame(read_excel(paste(DATA_DIR,'VCU_magpy_comp_8-27-21.xlsx',sep = '/')))
+validation.composition.82721 <- na.omit(composition.82721)[,2:12]
 
+magpie.elements <- read.csv('/home/timothy/magpy_elements.csv',row.names = 'Symbol')
+selected_features <- c('CovalentRadius','MeltingT','AtomicWeight','MendeleevNumber','NdValence')
+validation.magpie <- na.omit(fn.composition.to.magpie(validation.composition,magpie.elements,selected_features))
+validation.82721.magpie <- na.omit(fn.composition.to.magpie(magpie.82721[,-c(1,ncol(magpie.82721),ncol(magpie.82721)-1)],
+                                                            magpie.elements,selected_features))
+colnames(validation.magpie) <- c('mean_CovalentRadius','mean_MeltingT','mean_AtomicWeight','mean_MendeleevNumber','mean_NdValence')
+#validation.82721.magpie <- fn.composition.to.magpie(validation.composition,magpie.elements)
 #### Composition ####
 #Heating
 load(paste(MODEL_DIR,'best.svr.comp.5-27-21.rda',sep = '/'))
 comp.predictions.theating <- fn.temp.predict(validation.composition,best_model)
+comp.82721.predictions.theating <- fn.temp.predict(validation.composition.82721,best_model)
 
 #hysteresis
 load(paste(MODEL_DIR,'hyst.svr.comp.5-27-21.rda',sep = '/'))
 comp.predictions.hyst <- fn.temp.predict(validation.composition,best_model)
-
+comp.827.21.predictions.hyst <- fn.temp.predict(validation.composition.82721,best_model)
 ### Magpie ###
 load(paste(MODEL_DIR,'best.svr.magpie.6-1-21.rda',sep = '/'))
 magpie.predictions.theating <- fn.temp.predict(validation.magpie,best_model)
+validation.82721.magpie.theating <- cbind(magpie.82721[,1],fn.temp.predict(validation.82721.magpie,best_model))
+write.csv(validation.82721.magpie.theating,'/home/timothy/VCU_composition_magpie_8-28-21.csv')
 
 load(paste(MODEL_DIR,'best.hyst.magpie.6-1-21.rda',sep = '/'))
 magpie.predictions.hysteresis <- fn.temp.predict(validation.magpie,best_model)
+validation.82721.magpie.hyst <- cbind(magpie.82721[,1],fn.temp.predict(validation.82721.magpie,best_model))
+write.csv(validation.82721.magpie.hyst,'/home/timothy/VCU_magpie_hyst_8-28-21.csv')
